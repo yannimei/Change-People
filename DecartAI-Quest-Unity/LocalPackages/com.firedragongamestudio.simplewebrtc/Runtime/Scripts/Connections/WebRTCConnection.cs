@@ -120,6 +120,8 @@ namespace SimpleWebRTC {
         private void Awake() {
             SimpleWebRTCLogger.EnableLogging = ShowLogs;
 
+            ApplyDecartConfig();
+
             webRTCManager = new WebRTCManager(LocalPeerId, StunServerAddress, this);
 
             // register events for webrtc connection
@@ -276,6 +278,19 @@ namespace SimpleWebRTC {
             if (WebSocketConnectionActive && !ConnectionToWebSocketInProgress && !IsWebSocketConnected) {
                 string selectedEndpoint = UseLucyModel ? LucyWebSocket : MirageWebSocket ;
                 webRTCManager.Connect(selectedEndpoint, IsVideoAudioSender, IsVideoAudioReceiver);
+            }
+        }
+
+        private void ApplyDecartConfig() {
+            var cfg = DecartConfig.Load();
+            if (cfg == null) {
+                return;
+            }
+            if (!string.IsNullOrEmpty(cfg.mirageModel)) {
+                MirageWebSocket = cfg.BuildUrl(cfg.mirageModel);
+            }
+            if (!string.IsNullOrEmpty(cfg.lucyModel)) {
+                LucyWebSocket = cfg.BuildUrl(cfg.lucyModel);
             }
         }
 

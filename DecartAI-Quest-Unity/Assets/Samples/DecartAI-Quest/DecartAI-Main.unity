@@ -5241,8 +5241,8 @@ MonoBehaviour:
   PromptNameUpdated:
     m_PersistentCalls:
       m_Calls: []
-  MirageWebSocket: wss://api3.decart.ai/v1/stream?api_key=dct_quest2_IgzZqHgsDOfMhvqUTvoUfkaPYUvZKstfzruVjuVAiPmLImCbsSnjwoAUSDuwOJhi&model=mirage
-  LucyWebSocket: wss://api3.decart.ai/v1/stream?api_key=dct_quest2_IgzZqHgsDOfMhvqUTvoUfkaPYUvZKstfzruVjuVAiPmLImCbsSnjwoAUSDuwOJhi&model=lucy-2.1
+  MirageWebSocket: wss://api3.decart.ai/v1/stream?api_key=&model=mirage
+  LucyWebSocket: wss://api3.decart.ai/v1/stream?api_key=&model=lucy-2.1
   UseLucyModel: 0
   StunServerAddress: stun:stun.l.google.com:19302
   LocalPeerId: Quest-PeerId
