@@ -43,6 +43,7 @@ namespace SimpleWebRTC {
 
         private bool startWebRTCUpdate;
         private bool stopWebRTCUpdate;
+        private Coroutine webRTCUpdateCoroutine;
 
         // Frame rate control for streaming
 //        private float frameInterval = 1f / 12f; // 12 fps
@@ -167,8 +168,11 @@ namespace SimpleWebRTC {
 
             CreateVideoReceiver();
             DestroyCachedGameObjects();
-            StartWebRTCUpdate();
+            // Stop before Start: OpenWebSocket queues both flags in the same frame, and
+            // with the real (non-bogus) StopCoroutine now actually working, running Start
+            // first then Stop would kill the freshly-started coroutine — white canvas.
             StopWebRTCUpdate();
+            StartWebRTCUpdate();
 
             // OPTIONAL: Startup optimization phase (commented to match API-Example.html simplicity)
             // if (isInStartupPhase && IsVideoTransmissionActive) {
@@ -313,6 +317,19 @@ namespace SimpleWebRTC {
             }
             webRTCManager.RemoveVideoTrack();
 
+            // Stop and dispose any local capture tracks so the encoder/camera resources
+            // are released. Without this each disconnect leaks a VideoStreamTrack, which
+            // is what was causing the cumulative slowdown / freeze after a few reconnects.
+            if (videoStreamTrack != null) {
+                videoStreamTrack.Stop();
+                videoStreamTrack.Dispose();
+                videoStreamTrack = null;
+            }
+            if (audioStreamTrack != null) {
+                audioStreamTrack.Stop();
+                audioStreamTrack.Dispose();
+                audioStreamTrack = null;
+            }
 
             webRTCManager.CloseWebRTC();
             webRTCManager.CloseWebSocket();
@@ -326,6 +343,10 @@ namespace SimpleWebRTC {
 
         public void Connect() {
             WebSocketConnectionActive = true;
+            // Re-arm video transmission so it restarts after a Disconnect cycle.
+            // DisconnectClient clears StartStopVideoTransmission, which would otherwise
+            // leave the Update-loop guard false on reconnect and starve the local/remote video.
+            StartStopVideoTransmission = true;
         }
 
         public void ConnectWebRTC() {
@@ -366,6 +387,14 @@ namespace SimpleWebRTC {
                 // for restarting without stopping
                 SimpleWebRTCLogger.Log("DEBUG: Restarting video transmission - removing existing track");
                 webRTCManager.RemoveVideoTrack();
+            }
+
+            // Dispose any prior capture track before replacing the field, otherwise the
+            // previous session's encoder/camera resources are stranded.
+            if (videoStreamTrack != null) {
+                videoStreamTrack.Stop();
+                videoStreamTrack.Dispose();
+                videoStreamTrack = null;
             }
 
             if (UseImmersiveSetup) {
@@ -560,14 +589,25 @@ namespace SimpleWebRTC {
         private void StartWebRTCUpdate() {
             if (startWebRTCUpdate) {
                 startWebRTCUpdate = false;
-                StartCoroutine(WebRTC.Update());
+                // Stop any prior instance first — StopCoroutine(WebRTC.Update()) does NOT work
+                // because Unity matches coroutines by reference, not by method call. Without this
+                // each reconnect spawns another parallel WebRTC.Update() driving the same pipeline,
+                // which compounds latency by ~Nx after N reconnects.
+                if (webRTCUpdateCoroutine != null) {
+                    StopCoroutine(webRTCUpdateCoroutine);
+                    webRTCUpdateCoroutine = null;
+                }
+                webRTCUpdateCoroutine = StartCoroutine(WebRTC.Update());
             }
         }
 
         private void StopWebRTCUpdate() {
             if (stopWebRTCUpdate) {
                 stopWebRTCUpdate = false;
-                StopCoroutine(WebRTC.Update());
+                if (webRTCUpdateCoroutine != null) {
+                    StopCoroutine(webRTCUpdateCoroutine);
+                    webRTCUpdateCoroutine = null;
+                }
             }
         }
 

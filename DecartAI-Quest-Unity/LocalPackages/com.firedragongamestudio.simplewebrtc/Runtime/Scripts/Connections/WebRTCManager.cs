@@ -352,6 +352,15 @@ namespace SimpleWebRTC {
                         prompt = promptValue,
                         should_enrich = true
                     };
+
+            var wsState = ws != null ? ws.State.ToString() : "null";
+            Debug.Log($"[PROMPT] sending key='{promptKey}' (lucy={isUsingLucyModel}) ws={wsState}");
+
+            if (ws == null || ws.State != WebSocketState.Open) {
+                Debug.LogWarning($"[PROMPT] skipped — websocket not open (state={wsState})");
+                return;
+            }
+
             ws.SendText(JsonUtility.ToJson(promptMessage));
             OnPromptSent?.Invoke(promptKey);
         }
@@ -477,9 +486,18 @@ namespace SimpleWebRTC {
                 videoTrackSender.Value.Dispose();
             }
 
-            pc.Close();
+            if (pc != null) {
+                pc.Close();
+                pc.Dispose();
+                pc = null;
+            }
 
-
+            // Drop any cached receiver-side video texture reference too, otherwise the
+            // old remote stream's texture lingers in the previously-created RawImage.
+            if (VideoReceiver != null) {
+                VideoReceiver.texture = null;
+            }
+            ImmersiveVideoTexture = null;
 
             videoTrackSenders.Clear();
 

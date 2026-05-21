@@ -53,10 +53,11 @@ public class GameManager : MonoBehaviour
 
     private enum ExperienceState
     {
-        WaitingForSelection, 
+        WaitingForSelection,
+        ModelSelected,
         Running
     }
-    
+
     private ExperienceState _state = ExperienceState.WaitingForSelection;
 
     private bool _didStart;
@@ -66,6 +67,11 @@ public class GameManager : MonoBehaviour
     private Tween _passthroughTween;
     private Tween _forceFieldSoundTween;
     private static readonly int CustomTime = Shader.PropertyToID("_CustomTime");
+
+    private bool _hasModelSelection;
+    private bool _selectedUseLucy;
+    private float _bothTriggersHeldTime;
+    private const float BothTriggersResetDuration = 2f;
 
     private void Start()
     {
@@ -93,22 +99,85 @@ public class GameManager : MonoBehaviour
     private void ShowModelSelectionPrompt()
     {
         _state = ExperienceState.WaitingForSelection;
+        _hasModelSelection = false;
         Debug.Log("Model selection: Press A for Mirage or B for Lucy");
     }
 
-    private void SelectModelAndStart(bool useLucy)
+    private void SelectModel(bool useLucy)
     {
+        _hasModelSelection = true;
+        _selectedUseLucy = useLucy;
+        _state = ExperienceState.ModelSelected;
+        Debug.Log($"Selected model: {(useLucy ? "Lucy" : "Mirage")} — press X to connect");
+    }
+
+    private void ConnectSelectedModel()
+    {
+        if (!_hasModelSelection) return;
+
         if (!webRtcConnection)
         {
             Debug.LogError("WebRTCConnection reference is missing! Cannot start experience.");
             return;
         }
 
-        webRtcConnection.SetModelChoice(useLucy);
+        webRtcConnection.SetModelChoice(_selectedUseLucy);
         webRtcConnection.Connect();
-        Debug.Log($"Selected model: {webRtcConnection.GetSelectedModelName()}");
+        Debug.Log($"Connecting model: {webRtcConnection.GetSelectedModelName()}");
 
         StartExperience();
+    }
+
+    private void DisconnectAndShowPassthrough()
+    {
+        if (webRtcConnection) webRtcConnection.Disconnect();
+        RevertToPassthrough();
+        _state = ExperienceState.ModelSelected;
+        Debug.Log($"Disconnected. {(_selectedUseLucy ? "Lucy" : "Mirage")} still selected — press X to reconnect");
+    }
+
+    private void ResetToSelectionPrompt()
+    {
+        if (webRtcConnection) webRtcConnection.Disconnect();
+        RevertToPassthrough();
+        menuFader?.FadeIn();
+        ShowModelSelectionPrompt();
+    }
+
+    private void RevertToPassthrough()
+    {
+        _didStart = false;
+        _videoTransmissionPending = false;
+
+        StopForceFieldSounds();
+        StopIntroEffect();
+
+        if (streamParent)
+        {
+            // Destroy the runtime-created receiving RawImages so a fresh reconnect
+            // doesn't accumulate orphan children from the previous session.
+            foreach (var rawImage in streamParent.GetComponentsInChildren<RawImage>(includeInactive: true))
+            {
+                if (rawImage.gameObject.name.EndsWith("-Receiving-RawImage"))
+                {
+                    Destroy(rawImage.gameObject);
+                }
+            }
+            streamParent.gameObject.SetActive(false);
+        }
+        if (effectCone) effectCone.SetActive(false);
+
+        if (portal && portal.fader) portal.fader.FadeTo(0f, duration: 0.5f);
+        textFader?.FadeOut();
+
+        _passthroughTween?.Kill();
+        if (passthroughLayer)
+        {
+            _passthroughTween = DOTween.To(
+                () => passthroughLayer.textureOpacity,
+                x => passthroughLayer.textureOpacity = x,
+                1f, 0.5f);
+        }
     }
 
     private void StartExperience()
@@ -178,27 +247,68 @@ public class GameManager : MonoBehaviour
 
     private void Update()
     {
+        UpdateBothTriggersReset();
+
         switch (_state)
         {
             case ExperienceState.WaitingForSelection:
-                if (OVRInput.GetDown(OVRInput.Button.One)) // Mirage
+                if (OVRInput.GetDown(OVRInput.Button.One)) // A = Mirage
                 {
-                    SelectModelAndStart(useLucy: false);
+                    SelectModel(useLucy: false);
                 }
-                else if (OVRInput.GetDown(OVRInput.Button.Two)) // Lucy
+                else if (OVRInput.GetDown(OVRInput.Button.Two)) // B = Lucy
                 {
-                    SelectModelAndStart(useLucy: true);
+                    SelectModel(useLucy: true);
+                }
+                break;
+
+            case ExperienceState.ModelSelected:
+                if (OVRInput.GetDown(OVRInput.Button.One)) // A = Mirage
+                {
+                    SelectModel(useLucy: false);
+                }
+                else if (OVRInput.GetDown(OVRInput.Button.Two)) // B = Lucy
+                {
+                    SelectModel(useLucy: true);
+                }
+                else if (OVRInput.GetDown(OVRInput.Button.Three)) // X = Connect
+                {
+                    ConnectSelectedModel();
                 }
                 break;
 
             case ExperienceState.Running:
-                if (OVRInput.GetDown(OVRInput.Button.One) || OVRInput.GetDown(OVRInput.Button.Two))
+                if (OVRInput.GetDown(OVRInput.Button.Four)) // Y = Disconnect
+                {
+                    DisconnectAndShowPassthrough();
+                }
+                else if (OVRInput.GetDown(OVRInput.Button.One) || OVRInput.GetDown(OVRInput.Button.Two))
                 {
                     ShowWave();
                 }
                 break;
             default:
                 throw new ArgumentOutOfRangeException();
+        }
+    }
+
+    private void UpdateBothTriggersReset()
+    {
+        var leftTrigger = OVRInput.Get(OVRInput.Button.PrimaryIndexTrigger);
+        var rightTrigger = OVRInput.Get(OVRInput.Button.SecondaryIndexTrigger);
+
+        if (leftTrigger && rightTrigger)
+        {
+            _bothTriggersHeldTime += Time.deltaTime;
+            if (_bothTriggersHeldTime >= BothTriggersResetDuration && _state != ExperienceState.WaitingForSelection)
+            {
+                _bothTriggersHeldTime = 0f;
+                ResetToSelectionPrompt();
+            }
+        }
+        else
+        {
+            _bothTriggersHeldTime = 0f;
         }
     }
 
