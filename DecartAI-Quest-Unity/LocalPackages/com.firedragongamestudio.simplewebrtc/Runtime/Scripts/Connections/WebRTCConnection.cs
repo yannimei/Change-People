@@ -59,7 +59,7 @@ namespace SimpleWebRTC {
         [Header("Connection Setup")]
         [SerializeField] private string MirageWebSocket = "wss://api3.decart.ai/v1/stream-trial?model=mirage";
         [SerializeField] private string LucyWebSocket = "wss://api3.decart.ai/v1/stream-trial?model=lucy_v2v_720p_rt";
-        [SerializeField] private string LucyReferenceImageUrl = "";
+        [SerializeField] private string[] LucyReferenceImageUrls = new string[0];
         [SerializeField] private bool UseLucyModel = false;
         [SerializeField] private string StunServerAddress = "stun:stun.l.google.com:19302";
         [SerializeField] private string LocalPeerId = "PeerId";
@@ -298,8 +298,10 @@ namespace SimpleWebRTC {
             if (!string.IsNullOrEmpty(cfg.lucyModel)) {
                 LucyWebSocket = cfg.BuildUrl(cfg.lucyModel);
             }
-            if (!string.IsNullOrEmpty(cfg.imageUrl)) {
-                LucyReferenceImageUrl = cfg.imageUrl;
+            if (cfg.imageUrls != null && cfg.imageUrls.Length > 0) {
+                LucyReferenceImageUrls = cfg.imageUrls;
+            } else if (!string.IsNullOrEmpty(cfg.imageUrl)) {
+                LucyReferenceImageUrls = new[] { cfg.imageUrl };
             }
         }
 
@@ -591,6 +593,67 @@ namespace SimpleWebRTC {
             }
         }
 
+        private readonly List<string> cachedImagesBase64 = new List<string>();
+        private int currentImageIndex;
+        private bool isCachingImages;
+
+        public bool IsReferenceImageReady => cachedImagesBase64.Count > 0;
+
+        // Pre-download every reference image and keep them as base64, so each
+        // SendReferenceImage() fires instantly with no network wait.
+        public void PrecacheReferenceImages(Action onReady = null, Action<string> onError = null) {
+            if (LucyReferenceImageUrls == null || LucyReferenceImageUrls.Length == 0) {
+                onError?.Invoke("no image URLs configured");
+                return;
+            }
+            if (IsReferenceImageReady) {
+                onReady?.Invoke();
+                return;
+            }
+            if (isCachingImages) {
+                return;
+            }
+            StartCoroutine(CacheReferenceImagesAsync(onReady, onError));
+        }
+
+        private IEnumerator CacheReferenceImagesAsync(Action onReady, Action<string> onError) {
+            isCachingImages = true;
+            cachedImagesBase64.Clear();
+            currentImageIndex = 0;
+
+            foreach (var url in LucyReferenceImageUrls) {
+                if (string.IsNullOrEmpty(url)) {
+                    continue;
+                }
+                using (var request = UnityWebRequest.Get(url)) {
+                    yield return request.SendWebRequest();
+
+                    if (request.result != UnityWebRequest.Result.Success) {
+                        Debug.LogError($"[IMAGE] cache failed ({request.responseCode}): {request.error} — {url}");
+                        continue;
+                    }
+
+                    var bytes = request.downloadHandler.data;
+                    if (bytes == null || bytes.Length == 0) {
+                        Debug.LogError($"[IMAGE] cache returned no data — {url}");
+                        continue;
+                    }
+
+                    cachedImagesBase64.Add(Convert.ToBase64String(bytes));
+                    Debug.Log($"[IMAGE] cached {bytes.Length} bytes from {url} ({cachedImagesBase64.Count}/{LucyReferenceImageUrls.Length})");
+                }
+            }
+
+            isCachingImages = false;
+
+            if (cachedImagesBase64.Count == 0) {
+                onError?.Invoke("all image downloads failed");
+                yield break;
+            }
+            onReady?.Invoke();
+        }
+
+        // Sends the current cached image, then advances to the next one (wrapping at the end).
         public void SendReferenceImage() {
             if (webRTCManager == null) {
                 Debug.LogError("WebRTCConnection: webRTCManager is null!");
@@ -600,32 +663,21 @@ namespace SimpleWebRTC {
                 Debug.LogWarning("SendReferenceImage skipped — only supported on the Lucy model.");
                 return;
             }
-            if (string.IsNullOrEmpty(LucyReferenceImageUrl)) {
-                Debug.LogWarning("SendReferenceImage skipped — no image URL configured.");
+            if (cachedImagesBase64.Count == 0) {
+                // Not cached yet — cache, then send the first one.
+                PrecacheReferenceImages(SendCurrentReferenceImage);
                 return;
             }
-            StartCoroutine(DownloadAndSendReferenceImage(LucyReferenceImageUrl));
+            SendCurrentReferenceImage();
         }
 
-        private IEnumerator DownloadAndSendReferenceImage(string url) {
-            using (var request = UnityWebRequest.Get(url)) {
-                yield return request.SendWebRequest();
-
-                if (request.result != UnityWebRequest.Result.Success) {
-                    Debug.LogError($"[IMAGE] download failed ({request.responseCode}): {request.error} — {url}");
-                    yield break;
-                }
-
-                var bytes = request.downloadHandler.data;
-                if (bytes == null || bytes.Length == 0) {
-                    Debug.LogError($"[IMAGE] download returned no data — {url}");
-                    yield break;
-                }
-
-                var base64 = Convert.ToBase64String(bytes);
-                Debug.Log($"[IMAGE] downloaded {bytes.Length} bytes from {url}");
-                webRTCManager.SendImageData(base64);
+        private void SendCurrentReferenceImage() {
+            if (cachedImagesBase64.Count == 0) {
+                return;
             }
+            var index = currentImageIndex % cachedImagesBase64.Count;
+            webRTCManager.SendImageData(cachedImagesBase64[index], $"Reference Image {index + 1}/{cachedImagesBase64.Count}");
+            currentImageIndex = (index + 1) % cachedImagesBase64.Count;
         }
 
         private void StartWebRTCUpdate() {

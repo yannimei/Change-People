@@ -4838,6 +4838,7 @@ MonoBehaviour:
   startButton: {fileID: 647728290}
   menuFader: {fileID: 1122195236}
   textFader: {fileID: 557345623}
+  statusText: {fileID: 1709945471}
   portal: {fileID: 347471207}
   streamParent: {fileID: 1635666935}
   passthroughLayer: {fileID: 911098800}
@@ -5243,6 +5244,7 @@ MonoBehaviour:
       m_Calls: []
   MirageWebSocket: wss://api3.decart.ai/v1/stream?api_key=&model=mirage
   LucyWebSocket: wss://api3.decart.ai/v1/stream?api_key=&model=lucy-2.1
+  LucyReferenceImageUrl: 
   UseLucyModel: 0
   StunServerAddress: stun:stun.l.google.com:19302
   LocalPeerId: Quest-PeerId

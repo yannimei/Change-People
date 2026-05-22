@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using DG.Tweening;
 using SimpleWebRTC;
+using TMPro;
 using UnityEngine.Rendering;
 
 public class GameManager : MonoBehaviour
@@ -17,6 +18,9 @@ public class GameManager : MonoBehaviour
 
     [Tooltip("UI fader for showing informational text after portal opens.")]
     [SerializeField] private UIFader textFader;
+
+    [Tooltip("Status text shown during model selection / reference-image caching. Must live OUTSIDE the menu so it stays visible when the menu fades out.")]
+    [SerializeField] private TMP_Text statusText;
 
     [Header("Scene")]
     [Tooltip("Portal controller used for scaling and revealing the portal.")]
@@ -108,7 +112,42 @@ public class GameManager : MonoBehaviour
         _hasModelSelection = true;
         _selectedUseLucy = useLucy;
         _state = ExperienceState.ModelSelected;
-        Debug.Log($"Selected model: {(useLucy ? "Lucy" : "Mirage")} — press X to connect");
+
+        menuFader?.FadeOut();
+
+        if (useLucy && webRtcConnection)
+        {
+            SetStatus("you select lucy-2.1 model, wait for caching...");
+            webRtcConnection.PrecacheReferenceImages(
+                () => SetStatus("press x to connect"),
+                err => SetStatus($"image caching failed ({err})\npress x to connect"));
+        }
+        else
+        {
+            SetStatus($"{(useLucy ? "Lucy-2.1" : "Mirage")} selected — press x to connect");
+        }
+    }
+
+    private void SetStatus(string message)
+    {
+        var hasMessage = !string.IsNullOrEmpty(message);
+
+        if (statusText != null)
+        {
+            statusText.text = message;
+        }
+
+        // statusText lives under textFader's group, which starts hidden (alpha 0),
+        // so fade it in to actually show the message and out when cleared.
+        if (hasMessage)
+        {
+            textFader?.Show();
+            Debug.Log(message);
+        }
+        else
+        {
+            textFader?.Hide();
+        }
     }
 
     private void ConnectSelectedModel()
@@ -133,13 +172,14 @@ public class GameManager : MonoBehaviour
         if (webRtcConnection) webRtcConnection.Disconnect();
         RevertToPassthrough();
         _state = ExperienceState.ModelSelected;
-        Debug.Log($"Disconnected. {(_selectedUseLucy ? "Lucy" : "Mirage")} still selected — press X to reconnect");
+        SetStatus($"{(_selectedUseLucy ? "Lucy-2.1" : "Mirage")} disconnected — press x to reconnect");
     }
 
     private void ResetToSelectionPrompt()
     {
         if (webRtcConnection) webRtcConnection.Disconnect();
         RevertToPassthrough();
+        SetStatus("");
         menuFader?.FadeIn();
         ShowModelSelectionPrompt();
     }
@@ -185,6 +225,7 @@ public class GameManager : MonoBehaviour
         _didStart = true;
         _state = ExperienceState.Running;
 
+        SetStatus("");
         menuFader?.FadeOut();
         portal?.Show();
         if (effectCone)

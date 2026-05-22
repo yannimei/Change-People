@@ -343,7 +343,7 @@ namespace SimpleWebRTC {
             OnPromptSent?.Invoke(customPrompt);
         }
 
-        public void SendImageData(string imageBase64) {
+        public void SendImageData(string imageBase64, string label = "Reference Image") {
             if (string.IsNullOrEmpty(imageBase64)) {
                 Debug.LogWarning("[IMAGE] skipped — image data is empty");
                 return;
@@ -359,8 +359,8 @@ namespace SimpleWebRTC {
                 enhance_prompt = true
             };
             ws.SendText(JsonUtility.ToJson(setMessage));
-            Debug.Log($"[IMAGE] sent set_image ({imageBase64.Length} base64 chars)");
-            OnPromptSent?.Invoke("Reference Image");
+            Debug.Log($"[IMAGE] sent set_image ({imageBase64.Length} base64 chars) — {label}");
+            OnPromptSent?.Invoke(label);
         }
 
         public void SetModelType(bool isLucy) {
