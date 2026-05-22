@@ -105,21 +105,7 @@ namespace QuestCameraKit.WebRTC
                 return;
             }
 
-            HandleInput();
             SendQueuedPrompts();
-        }
-
-        private void HandleInput()
-        {
-            if (OVRInput.GetDown(OVRInput.Button.One))
-            {
-                webRtcConnection.SendNextPrompt(true);
-            }
-
-            if (OVRInput.GetDown(OVRInput.Button.Two))
-            {
-                webRtcConnection.SendNextPrompt(false);
-            }
         }
 
         private void SendQueuedPrompts()

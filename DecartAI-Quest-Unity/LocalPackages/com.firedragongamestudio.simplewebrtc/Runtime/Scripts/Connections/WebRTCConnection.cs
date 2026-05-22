@@ -10,6 +10,7 @@ using System.Linq;
 using Unity.WebRTC;
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.Networking;
 using UnityEngine.Rendering;
 using UnityEngine.UI;
 
@@ -58,6 +59,7 @@ namespace SimpleWebRTC {
         [Header("Connection Setup")]
         [SerializeField] private string MirageWebSocket = "wss://api3.decart.ai/v1/stream-trial?model=mirage";
         [SerializeField] private string LucyWebSocket = "wss://api3.decart.ai/v1/stream-trial?model=lucy_v2v_720p_rt";
+        [SerializeField] private string LucyReferenceImageUrl = "";
         [SerializeField] private bool UseLucyModel = false;
         [SerializeField] private string StunServerAddress = "stun:stun.l.google.com:19302";
         [SerializeField] private string LocalPeerId = "PeerId";
@@ -295,6 +297,9 @@ namespace SimpleWebRTC {
             }
             if (!string.IsNullOrEmpty(cfg.lucyModel)) {
                 LucyWebSocket = cfg.BuildUrl(cfg.lucyModel);
+            }
+            if (!string.IsNullOrEmpty(cfg.imageUrl)) {
+                LucyReferenceImageUrl = cfg.imageUrl;
             }
         }
 
@@ -583,6 +588,43 @@ namespace SimpleWebRTC {
                 webRTCManager.SendCustomPrompt(customPrompt);
             } else {
                 Debug.LogError("WebRTCConnection: webRTCManager is null!");
+            }
+        }
+
+        public void SendReferenceImage() {
+            if (webRTCManager == null) {
+                Debug.LogError("WebRTCConnection: webRTCManager is null!");
+                return;
+            }
+            if (!UseLucyModel) {
+                Debug.LogWarning("SendReferenceImage skipped — only supported on the Lucy model.");
+                return;
+            }
+            if (string.IsNullOrEmpty(LucyReferenceImageUrl)) {
+                Debug.LogWarning("SendReferenceImage skipped — no image URL configured.");
+                return;
+            }
+            StartCoroutine(DownloadAndSendReferenceImage(LucyReferenceImageUrl));
+        }
+
+        private IEnumerator DownloadAndSendReferenceImage(string url) {
+            using (var request = UnityWebRequest.Get(url)) {
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success) {
+                    Debug.LogError($"[IMAGE] download failed ({request.responseCode}): {request.error} — {url}");
+                    yield break;
+                }
+
+                var bytes = request.downloadHandler.data;
+                if (bytes == null || bytes.Length == 0) {
+                    Debug.LogError($"[IMAGE] download returned no data — {url}");
+                    yield break;
+                }
+
+                var base64 = Convert.ToBase64String(bytes);
+                Debug.Log($"[IMAGE] downloaded {bytes.Length} bytes from {url}");
+                webRTCManager.SendImageData(base64);
             }
         }
 

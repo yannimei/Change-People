@@ -14,6 +14,7 @@ namespace SimpleWebRTC {
         public string apiKey;
         public string mirageModel;
         public string lucyModel;
+        public string imageUrl;
 
         public static string FilePath => Path.Combine(Application.persistentDataPath, FileName);
 

@@ -282,9 +282,15 @@ public class GameManager : MonoBehaviour
                 {
                     DisconnectAndShowPassthrough();
                 }
-                else if (OVRInput.GetDown(OVRInput.Button.One) || OVRInput.GetDown(OVRInput.Button.Two))
+                else if (OVRInput.GetDown(OVRInput.Button.One)) // A = wave + apply reference image (Lucy)
                 {
                     ShowWave();
+                    if (webRtcConnection) webRtcConnection.SendReferenceImage();
+                }
+                else if (OVRInput.GetDown(OVRInput.Button.Two)) // B = wave + next text prompt
+                {
+                    ShowWave();
+                    if (webRtcConnection) webRtcConnection.SendNextPrompt(true);
                 }
                 break;
             default:

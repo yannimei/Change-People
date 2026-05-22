@@ -52,6 +52,15 @@ namespace SimpleWebRTC {
               public bool should_enrich;
         }
 
+        // lucy-2.1 reference-image message. Matches the @decartai/sdk wire format:
+        // image_data is the raw base64 of the image bytes (no data: prefix).
+        [Serializable]
+        public class outboundSetImageMessage {
+              public string type;
+              public string image_data;
+              public bool enhance_prompt;
+        }
+
         [Serializable]
         public class inboundIceCandidateMessage {
             public string type;
@@ -332,6 +341,26 @@ namespace SimpleWebRTC {
                     };
             ws.SendText(JsonUtility.ToJson(promptMessage));
             OnPromptSent?.Invoke(customPrompt);
+        }
+
+        public void SendImageData(string imageBase64) {
+            if (string.IsNullOrEmpty(imageBase64)) {
+                Debug.LogWarning("[IMAGE] skipped — image data is empty");
+                return;
+            }
+            if (ws == null || ws.State != WebSocketState.Open) {
+                Debug.LogWarning($"[IMAGE] skipped — websocket not open (state={(ws != null ? ws.State.ToString() : "null")})");
+                return;
+            }
+
+            var setMessage = new outboundSetImageMessage {
+                type = "set_image",
+                image_data = imageBase64,
+                enhance_prompt = true
+            };
+            ws.SendText(JsonUtility.ToJson(setMessage));
+            Debug.Log($"[IMAGE] sent set_image ({imageBase64.Length} base64 chars)");
+            OnPromptSent?.Invoke("Reference Image");
         }
 
         public void SetModelType(bool isLucy) {
